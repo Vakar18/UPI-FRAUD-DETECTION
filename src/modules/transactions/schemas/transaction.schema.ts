@@ -9,7 +9,7 @@ import { ApiProperty } from '@nestjs/swagger';
 //
 // Design decisions:
 //  • riskScore / riskLevel / fraudSignals are written AFTER the ML engine
-//    processes the transaction via the BullMQ queue.  They are optional at
+//    processes the transaction via the Bull queue.  They are optional at
 //    creation time so the ingestion endpoint can persist fast and respond
 //    immediately (async processing pattern).
 //  • Indexes on senderId, receiverId, createdAt and riskLevel cover the

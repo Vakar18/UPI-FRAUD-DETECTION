@@ -1,19 +1,16 @@
 version: '3.9'
 
 # ─────────────────────────────────────────────────────────────────────────────
-# docker-compose.yml
+# docker-compose.yml  (Part 3 – full stack)
 #
-# Spins up the two external services the backend needs:
-#   • MongoDB 7  – primary database
-#   • Redis 7    – Bull queue + pub/sub for real-time alerts
-#
-# Usage:
-#   docker compose up -d        # start in background
-#   docker compose logs -f      # tail logs
-#   docker compose down -v      # stop and wipe volumes
+# Services:
+#   mongodb       – primary database (port 27017)
+#   redis         – BullMQ queue + pub/sub (port 6379)
+#   ml-service    – Python Flask + Isolation Forest (port 5000)
+#   redis-commander – BullBoard alternative GUI (port 8081)
 #
 # The NestJS app itself runs outside Docker in dev (npm run start:dev).
-# For a fully containerised setup see Dockerfile below.
+# For a fully containerised setup run:  docker compose --profile full up -d
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -27,7 +24,7 @@ services:
       MONGO_INITDB_DATABASE: upi_fraud_detection
     volumes:
       - mongo_data:/data/db
-      - ./docker/mongo-init.js:/docker-entrypoint-initdb.d/init.js:ro
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/init.js:ro
     healthcheck:
       test: ['CMD', 'mongosh', '--eval', "db.adminCommand('ping')"]
       interval: 10s
@@ -49,7 +46,34 @@ services:
       timeout: 3s
       retries: 5
 
-  # ── Optional: Redis Commander GUI (remove in production) ──────────────────
+  ml-service:
+    build:
+      context: ./src/modules/ml
+      dockerfile: Dockerfile
+    container_name: upi_fraud_ml
+    restart: unless-stopped
+    ports:
+      - '5000:5000'
+    environment:
+      PORT: 5000
+      FLASK_DEBUG: 'false'
+      FRAUD_RISK_THRESHOLD: 70
+      MEDIUM_RISK_THRESHOLD: 40
+      MODEL_PATH: /app/models/model.joblib
+      SCALER_PATH: /app/models/scaler.joblib
+    volumes:
+      - ml_models:/app/models
+    healthcheck:
+      test: ['CMD', 'python', '-c',
+             "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 25s
+      retries: 3
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
   redis-commander:
     image: rediscommander/redis-commander:latest
     container_name: upi_fraud_redis_ui
@@ -65,3 +89,4 @@ services:
 volumes:
   mongo_data:
   redis_data:
+  ml_models:

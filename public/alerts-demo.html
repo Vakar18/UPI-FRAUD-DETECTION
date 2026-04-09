@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UPI Fraud Alerts Live Demo</title>
+    <style>
+      :root {
+        --bg: #f5efe4;
+        --panel: rgba(255, 252, 245, 0.9);
+        --ink: #1d1a16;
+        --muted: #6f665a;
+        --line: rgba(35, 29, 22, 0.12);
+        --critical: #9e1b1b;
+        --high: #c75a11;
+        --medium: #8f6a12;
+        --low: #2b7f62;
+        --accent: #0f5b73;
+        --glow: rgba(15, 91, 115, 0.18);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(199, 90, 17, 0.2), transparent 32%),
+          radial-gradient(circle at top right, rgba(15, 91, 115, 0.18), transparent 36%),
+          linear-gradient(160deg, #f8f3ea 0%, #efe6d7 48%, #f7f3ec 100%);
+      }
+
+      .shell {
+        width: min(1200px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 32px 0 48px;
+      }
+
+      .hero {
+        padding: 28px;
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        background: linear-gradient(135deg, rgba(255, 248, 238, 0.95), rgba(250, 244, 233, 0.86));
+        box-shadow: 0 24px 64px rgba(42, 28, 10, 0.08);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: auto -80px -80px auto;
+        width: 240px;
+        height: 240px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(15, 91, 115, 0.16), transparent 70%);
+      }
+
+      .eyebrow {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+
+      h1 {
+        margin: 10px 0 12px;
+        font-size: clamp(2rem, 4vw, 4rem);
+        line-height: 0.95;
+        letter-spacing: -0.04em;
+        max-width: 12ch;
+      }
+
+      .lead {
+        margin: 0;
+        max-width: 62ch;
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.65;
+      }
+
+      .tips {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 18px;
+      }
+
+      .tip {
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: rgba(29, 26, 22, 0.05);
+        border: 1px solid rgba(29, 26, 22, 0.08);
+        font-size: 0.92rem;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 18px;
+        margin-top: 20px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--panel);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 14px 36px rgba(33, 24, 10, 0.06);
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 18px 20px 0;
+      }
+
+      .panel-title {
+        margin: 0;
+        font-size: 1rem;
+        letter-spacing: 0.02em;
+      }
+
+      .panel-body {
+        padding: 18px 20px 20px;
+      }
+
+      .status-panel {
+        grid-column: span 4;
+      }
+
+      .stats-panel {
+        grid-column: span 8;
+      }
+
+      .alerts-panel,
+      .scores-panel {
+        grid-column: span 6;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        border-radius: 999px;
+        background: rgba(29, 26, 22, 0.06);
+        font-weight: 700;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #7b7b7b;
+        box-shadow: 0 0 0 8px rgba(123, 123, 123, 0.12);
+      }
+
+      .dot.live {
+        background: #23855e;
+        box-shadow: 0 0 0 8px rgba(35, 133, 94, 0.16);
+      }
+
+      .dot.offline {
+        background: #a12b2b;
+        box-shadow: 0 0 0 8px rgba(161, 43, 43, 0.14);
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .metric {
+        padding: 16px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.45);
+      }
+
+      .metric-label {
+        display: block;
+        color: var(--muted);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+
+      .metric-value {
+        display: block;
+        margin-top: 8px;
+        font-size: 1.8rem;
+        font-weight: 700;
+      }
+
+      .risk-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .risk-card {
+        padding: 16px;
+        border-radius: 18px;
+        color: #fff;
+      }
+
+      .risk-card small {
+        display: block;
+        opacity: 0.8;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.74rem;
+      }
+
+      .risk-card strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 1.7rem;
+      }
+
+      .risk-low { background: linear-gradient(145deg, #1d8b69, #165a46); }
+      .risk-medium { background: linear-gradient(145deg, #b0840e, #7f620d); }
+      .risk-high { background: linear-gradient(145deg, #d16619, #9c4210); }
+      .risk-critical { background: linear-gradient(145deg, #b32727, #741616); }
+
+      .feed {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        max-height: 440px;
+        overflow: auto;
+        padding-right: 4px;
+      }
+
+      .feed-item {
+        padding: 16px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.54);
+        animation: rise 320ms ease;
+      }
+
+      .feed-item.alert {
+        border-left: 6px solid var(--high);
+        box-shadow: 0 0 0 1px rgba(199, 90, 17, 0.06), 0 18px 30px rgba(199, 90, 17, 0.08);
+      }
+
+      .feed-item.critical {
+        border-left-color: var(--critical);
+        box-shadow: 0 0 0 1px rgba(158, 27, 27, 0.08), 0 18px 30px rgba(158, 27, 27, 0.1);
+      }
+
+      .item-topline {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+      }
+
+      .item-title {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 7px 10px;
+        font-size: 0.74rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #fff;
+      }
+
+      .badge.low { background: var(--low); }
+      .badge.medium { background: var(--medium); }
+      .badge.high { background: var(--high); }
+      .badge.critical { background: var(--critical); }
+
+      .meta {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 0.92rem;
+        line-height: 1.55;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .chip {
+        padding: 7px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(29, 26, 22, 0.1);
+        background: rgba(15, 91, 115, 0.06);
+        font-size: 0.78rem;
+      }
+
+      .empty {
+        padding: 20px;
+        border-radius: 18px;
+        border: 1px dashed rgba(29, 26, 22, 0.18);
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.38);
+      }
+
+      .toolbar {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        border: 0;
+        border-radius: 999px;
+        padding: 10px 14px;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        background: var(--accent);
+        color: #fff;
+        box-shadow: 0 10px 22px var(--glow);
+      }
+
+      button.secondary {
+        background: rgba(29, 26, 22, 0.08);
+        color: var(--ink);
+        box-shadow: none;
+      }
+
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 960px) {
+        .status-panel,
+        .stats-panel,
+        .alerts-panel,
+        .scores-panel {
+          grid-column: 1 / -1;
+        }
+
+        .risk-strip {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 640px) {
+        .shell {
+          width: min(100vw - 20px, 100%);
+          padding-top: 18px;
+        }
+
+        .hero,
+        .panel {
+          border-radius: 20px;
+        }
+
+        .risk-strip,
+        .metrics {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div class="eyebrow">Live Fraud Stream</div>
+        <h1>Watch simulated UPI fraud alerts land in real time.</h1>
+        <p class="lead">
+          This page listens to the NestJS Socket.io gateway at <code>/fraud</code> and
+          renders <code>fraud-alert</code>, <code>txn-scored</code>, and
+          <code>stats-update</code> events as soon as the queue processor scores a transaction.
+        </p>
+        <div class="tips">
+          <div class="tip">Set <code>SIMULATOR_ENABLED=true</code> in <code>.env</code></div>
+          <div class="tip">Restart the Nest app after changing env values</div>
+          <div class="tip">Open Bull Board at <code>/queues</code> for job-level visibility</div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <article class="panel status-panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Connection</h2>
+            <div class="toolbar">
+              <button id="alerts-only-btn">Subscribe Alerts Only</button>
+              <button id="clear-btn" class="secondary">Clear Feed</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="status-pill">
+              <span id="status-dot" class="dot"></span>
+              <span id="status-text">Connecting to /fraud</span>
+            </div>
+
+            <div class="metrics">
+              <div class="metric">
+                <span class="metric-label">Alerts seen</span>
+                <span class="metric-value" id="alert-count">0</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Transactions scored</span>
+                <span class="metric-value" id="scored-count">0</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Last txn</span>
+                <span class="metric-value" id="last-txn">-</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Last update</span>
+                <span class="metric-value" id="last-update">-</span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel stats-panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Live Risk Distribution</h2>
+          </div>
+          <div class="panel-body">
+            <div class="risk-strip">
+              <div class="risk-card risk-low">
+                <small>Low</small>
+                <strong id="risk-low">0</strong>
+              </div>
+              <div class="risk-card risk-medium">
+                <small>Medium</small>
+                <strong id="risk-medium">0</strong>
+              </div>
+              <div class="risk-card risk-high">
+                <small>High</small>
+                <strong id="risk-high">0</strong>
+              </div>
+              <div class="risk-card risk-critical">
+                <small>Critical</small>
+                <strong id="risk-critical">0</strong>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel alerts-panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Fraud Alerts</h2>
+          </div>
+          <div class="panel-body">
+            <div id="alerts-feed" class="feed">
+              <div class="empty">High and critical transactions will appear here as soon as they are flagged.</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel scores-panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Scored Transactions</h2>
+          </div>
+          <div class="panel-body">
+            <div id="scores-feed" class="feed">
+              <div class="empty">Every scored transaction, even low-risk ones, will appear here.</div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io(window.location.origin + "/fraud", {
+        transports: ["websocket", "polling"],
+      });
+
+      const state = {
+        alerts: 0,
+        scored: 0,
+        alertsOnly: false,
+      };
+
+      const statusDot = document.getElementById("status-dot");
+      const statusText = document.getElementById("status-text");
+      const alertCount = document.getElementById("alert-count");
+      const scoredCount = document.getElementById("scored-count");
+      const lastTxn = document.getElementById("last-txn");
+      const lastUpdate = document.getElementById("last-update");
+      const alertsFeed = document.getElementById("alerts-feed");
+      const scoresFeed = document.getElementById("scores-feed");
+      const alertsOnlyBtn = document.getElementById("alerts-only-btn");
+      const clearBtn = document.getElementById("clear-btn");
+
+      const riskRefs = {
+        LOW: document.getElementById("risk-low"),
+        MEDIUM: document.getElementById("risk-medium"),
+        HIGH: document.getElementById("risk-high"),
+        CRITICAL: document.getElementById("risk-critical"),
+      };
+
+      function setStatus(text, mode) {
+        statusText.textContent = text;
+        statusDot.className = "dot " + mode;
+      }
+
+      function updateCounters(txnId) {
+        if (txnId) {
+          lastTxn.textContent = txnId;
+        }
+        lastUpdate.textContent = new Date().toLocaleTimeString();
+        alertCount.textContent = String(state.alerts);
+        scoredCount.textContent = String(state.scored);
+      }
+
+      function asCurrency(paise) {
+        return new Intl.NumberFormat("en-IN", {
+          style: "currency",
+          currency: "INR",
+          maximumFractionDigits: 2,
+        }).format((paise || 0) / 100);
+      }
+
+      function riskClass(level) {
+        return String(level || "LOW").toLowerCase();
+      }
+
+      function clearEmpty(feed) {
+        const empty = feed.querySelector(".empty");
+        if (empty) {
+          empty.remove();
+        }
+      }
+
+      function prepend(feed, item) {
+        clearEmpty(feed);
+        feed.prepend(item);
+        while (feed.children.length > 20) {
+          feed.removeChild(feed.lastElementChild);
+        }
+      }
+
+      function makeChip(text) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = text;
+        return chip;
+      }
+
+      function renderAlert(alert) {
+        state.alerts += 1;
+        updateCounters(alert.txnId);
+
+        const item = document.createElement("article");
+        item.className = "feed-item alert " + (alert.riskLevel === "CRITICAL" ? "critical" : "");
+
+        const chips = document.createElement("div");
+        chips.className = "chips";
+        Object.entries(alert.fraudSignals || {})
+          .filter(([, value]) => Boolean(value))
+          .slice(0, 6)
+          .forEach(([key, value]) => {
+            chips.appendChild(makeChip(key.replaceAll("_", " ") + (typeof value === "number" ? ": " + value : "")));
+          });
+
+        item.innerHTML = `
+          <div class="item-topline">
+            <div>
+              <h3 class="item-title">${alert.txnId}</h3>
+              <div class="meta">${alert.senderId} → ${alert.receiverId}</div>
+            </div>
+            <span class="badge ${riskClass(alert.riskLevel)}">${alert.riskLevel}</span>
+          </div>
+          <div class="meta">
+            <strong>${asCurrency(alert.amount)}</strong> in ${alert.city}<br />
+            Score ${alert.riskScore} · ${new Date(alert.scoredAt).toLocaleTimeString()}<br />
+            ${alert.riskReason}
+          </div>
+        `;
+
+        if (chips.children.length > 0) {
+          item.appendChild(chips);
+        }
+
+        prepend(alertsFeed, item);
+      }
+
+      function renderScored(txn) {
+        state.scored += 1;
+        updateCounters(txn.txnId);
+
+        const item = document.createElement("article");
+        item.className = "feed-item";
+        item.innerHTML = `
+          <div class="item-topline">
+            <div>
+              <h3 class="item-title">${txn.txnId}</h3>
+              <div class="meta">Status ${txn.status}</div>
+            </div>
+            <span class="badge ${riskClass(txn.riskLevel)}">${txn.riskLevel}</span>
+          </div>
+          <div class="meta">
+            Score ${txn.riskScore} · ${new Date(txn.scoredAt).toLocaleTimeString()}
+          </div>
+        `;
+
+        prepend(scoresFeed, item);
+      }
+
+      function renderStats(stats) {
+        const dist = stats.riskDistribution || {};
+        for (const key of Object.keys(riskRefs)) {
+          riskRefs[key].textContent = String(dist[key] || 0);
+        }
+        updateCounters();
+      }
+
+      socket.on("connect", () => {
+        setStatus("Live connection established", "live");
+      });
+
+      socket.on("disconnect", () => {
+        setStatus("Disconnected from gateway", "offline");
+      });
+
+      socket.on("connect_error", (error) => {
+        setStatus("Connection error: " + error.message, "offline");
+      });
+
+      socket.on("connected", (payload) => {
+        setStatus("Connected as " + payload.clientId, "live");
+      });
+
+      socket.on("fraud-alert", renderAlert);
+      socket.on("txn-scored", renderScored);
+      socket.on("stats-update", renderStats);
+
+      alertsOnlyBtn.addEventListener("click", () => {
+        state.alertsOnly = !state.alertsOnly;
+        if (state.alertsOnly) {
+          socket.emit("subscribe-alerts-only");
+          alertsOnlyBtn.textContent = "Unsubscribe Alerts Only";
+        } else {
+          socket.emit("unsubscribe-alerts-only");
+          alertsOnlyBtn.textContent = "Subscribe Alerts Only";
+        }
+      });
+
+      clearBtn.addEventListener("click", () => {
+        alertsFeed.innerHTML = '<div class="empty">High and critical transactions will appear here as soon as they are flagged.</div>';
+        scoresFeed.innerHTML = '<div class="empty">Every scored transaction, even low-risk ones, will appear here.</div>';
+        state.alerts = 0;
+        state.scored = 0;
+        updateCounters();
+      });
+    </script>
+  </body>
+</html>

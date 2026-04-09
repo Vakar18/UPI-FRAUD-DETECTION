@@ -1,0 +1,13 @@
+{
+  "txnId": "__TXN_ID__",
+  "senderId": "e2euser@oksbi",
+  "receiverId": "cashout999@ybl",
+  "amount": 9000000,
+  "currency": "INR",
+  "deviceId": "DV-E2E12345",
+  "city": "Mumbai",
+  "state": "Maharashtra",
+  "ipAddress": "103.21.58.12",
+  "deviceModel": "Samsung Galaxy S23",
+  "transactionTime": "2026-04-09T02:30:00.000Z"
+}

@@ -65,8 +65,9 @@ cp .env.example .env
 
 ```bash
 docker compose up -d
-# MongoDB → localhost:27017
-# Redis   → localhost:6379
+# MongoDB → localhost:27018
+# Redis   → localhost:6378
+# ML svc  → localhost:5000
 # Redis Commander UI → http://localhost:8081
 ```
 
@@ -81,11 +82,17 @@ You should see:
 ```
 [Bootstrap] Application running on http://localhost:3000/api/v1
 [Bootstrap] Swagger UI → http://localhost:3000/docs
-[SimulatorService] Simulator started – firing every 3000ms
+[Bootstrap] Alerts demo → http://localhost:3000/demo/alerts-demo.html
 ```
 
-The simulator starts firing mock UPI transactions immediately.  
-Open **http://localhost:3000/docs** to see the full interactive API.
+Quick links:
+- **Swagger** → http://localhost:3000/docs
+- **Bull Board** → http://localhost:3000/queues
+- **Live Alerts Demo** → http://localhost:3000/demo/alerts-demo.html
+
+If you enable `SIMULATOR_ENABLED=true` in `.env` and restart the app, the live
+demo page will show real-time `fraud-alert`, `txn-scored`, and `stats-update`
+events from simulated transactions.
 
 ---
 

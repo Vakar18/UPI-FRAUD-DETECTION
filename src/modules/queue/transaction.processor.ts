@@ -1,31 +1,27 @@
-import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger, Injectable } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { ConfigService } from '@nestjs/config';
 import { TransactionRepository } from '../transactions/repositories/transaction.repository';
 import { UpdateRiskDto } from '../transactions/dto/transaction.dto';
-import { RiskLevel, TransactionStatus } from '../transactions/schemas/transaction.schema';
+import { TransactionStatus } from '../transactions/schemas/transaction.schema';
+import { MlService } from '../ml/ml.service';
+import { AlertPublisher } from '../gateway/alert-publisher.service';
 import { TRANSACTION_QUEUE, SCORE_TRANSACTION_JOB } from './queue.constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// transaction.processor.ts
+// transaction.processor.ts  (Part 3 – with AlertPublisher)
 //
-// BullMQ queue consumer.  Each SCORE_TRANSACTION_JOB:
-//  1. Loads the transaction from MongoDB
-//  2. Calls the ML microservice (Part 3) via HTTP
-//     → In Part 1 we use a rule-based stub so the system works end-to-end
-//       without the Python service.  The stub mirrors the same interface so
-//       swapping in the real ML service in Part 3 requires zero changes here.
-//  3. Writes the risk score back via the repository
+// WorkerHost is the BullMQ-native base class.
+// Each SCORE_TRANSACTION_JOB:
+//   1. Marks the transaction PROCESSING
+//   2. Loads the document from MongoDB
+//   3. Calls MlService.score() → HTTP to Python, rule-based fallback
+//   4. Writes risk result back via repository
+//   5. Sets final status SCORED | FLAGGED
+//   6. Calls AlertPublisher.notify() → WebSocket emission
 //
-// Retry strategy: 3 attempts with exponential back-off (2s, 4s, 8s).
-// Dead-letter: failed jobs stay in BullMQ's failed set for manual inspection.
-//
-// Interview talking point:
-//  "By decoupling scoring into a queue I can ingest transactions at 99.9%
-//   uptime even if the ML service is temporarily down – jobs just accumulate
-//   and drain when it recovers.  This is the same pattern used in production
-//   payment systems."
+// Retry: 3 attempts, exponential back-off 2 s / 4 s / 8 s (set in AppModule)
+// Dead-letter: failed jobs stay visible in BullBoard at /queues
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface ScoreJobPayload {
@@ -39,135 +35,83 @@ export class TransactionProcessor extends WorkerHost {
 
   constructor(
     private readonly repo: TransactionRepository,
-    private readonly config: ConfigService,
+    private readonly mlService: MlService,
+    private readonly alertPublisher: AlertPublisher,
   ) {
     super();
   }
 
-  // ── Job handler ───────────────────────────────────────────────────────────
+  // ── Main job handler ──────────────────────────────────────────────────────
 
   async process(job: Job<ScoreJobPayload>): Promise<void> {
-    if (job.name !== SCORE_TRANSACTION_JOB) {
-      this.logger.warn(`Skipping unsupported job ${job.name} on queue ${TRANSACTION_QUEUE}`);
-      return;
-    }
+    if (job.name !== SCORE_TRANSACTION_JOB) return;
 
     const { txnId } = job.data;
+    this.logger.debug(`Processing job ${job.id} for txn ${txnId}`);
 
-    // Mark as processing
+    // 1. Mark processing
     await this.repo.updateStatus(txnId, TransactionStatus.PROCESSING);
+    await job.updateProgress(10);
 
-    // Load full transaction
+    // 2. Load full document
     const txn = await this.repo.findByTxnId(txnId);
     if (!txn) {
       this.logger.warn(`Job ${job.id}: txn ${txnId} not found – skipping`);
       return;
     }
+    await job.updateProgress(30);
 
-    // ── ML scoring (stub in Part 1, real HTTP call in Part 3) ────────────
-    const riskResult = await this.scoreTransaction(txn);
+    // 3. Score via ML service (HTTP → Python, with rule-based fallback)
+    const riskResult = await this.mlService.score(txn);
+    await job.updateProgress(80);
 
-    // ── Determine status ──────────────────────────────────────────────────
-    const fraudThreshold = this.config.get<number>('fraud.riskThreshold') || 70;
+    // 4. Determine final status
     const status =
-      riskResult.riskScore >= fraudThreshold
+      riskResult.riskScore >= this.mlService.getFraudThreshold()
         ? TransactionStatus.FLAGGED
         : TransactionStatus.SCORED;
 
-    // ── Persist result ────────────────────────────────────────────────────
+    // 5. Persist risk result
     const update: UpdateRiskDto = {
       ...riskResult,
       status,
       scoredAt: new Date(),
     };
-    await this.repo.updateRisk(txnId, update);
+    const updated = await this.repo.updateRisk(txnId, update);
+    await job.updateProgress(95);
 
-    await job.updateProgress(100);
-  }
-
-  // ── Rule-based scoring stub ───────────────────────────────────────────────
-  // Mirrors the interface of the Python ML service (Part 3).
-  // Each signal weight is tunable via the fraudConfig.
-  // Returns { riskScore, riskLevel, fraudSignals, riskReason }
-
-  private async scoreTransaction(txn: any): Promise<Omit<UpdateRiskDto, 'status' | 'scoredAt'>> {
-    const signals: Record<string, boolean | number> = {
-      // Amount anomalies
-      large_amount:      txn.amount > 500_000,    // > ₹5,000
-      very_large_amount: txn.amount > 2_500_000,  // > ₹25,000
-
-      // Time anomalies
-      odd_hour: txn.hourOfDay >= 1 && txn.hourOfDay <= 4,
-
-      // Behavioural
-      new_recipient:     txn.isNewRecipient,
-      rapid_succession:  txn.recentTxnCount >= 3,
-      very_rapid:        txn.recentTxnCount >= 6,
-
-      // Round number heuristic (common in structuring fraud)
-      round_number:
-        txn.amount >= 1_000_000 && txn.amount % 100_000 === 0,
-    };
-
-    // Weighted sum
-    const weights: Record<string, number> = {
-      large_amount:      15,
-      very_large_amount: 25,
-      odd_hour:          20,
-      new_recipient:     20,
-      rapid_succession:  20,
-      very_rapid:        35,
-      round_number:      15,
-    };
-
-    let score = 0;
-    const triggered: string[] = [];
-
-    for (const [key, val] of Object.entries(signals)) {
-      if (val) {
-        score += weights[key] || 0;
-        triggered.push(key);
-      }
+    // 6. Emit WebSocket events (fraud-alert + txn-scored)
+    if (updated) {
+      this.alertPublisher.notify(updated);
     }
 
-    score = Math.min(score, 100); // cap at 100
-
-    const mediumThreshold = this.config.get<number>('fraud.mediumThreshold') || 40;
-    const fraudThreshold  = this.config.get<number>('fraud.riskThreshold')   || 70;
-
-    let riskLevel: RiskLevel;
-    if (score >= 90)              riskLevel = RiskLevel.CRITICAL;
-    else if (score >= fraudThreshold)  riskLevel = RiskLevel.HIGH;
-    else if (score >= mediumThreshold) riskLevel = RiskLevel.MEDIUM;
-    else                               riskLevel = RiskLevel.LOW;
-
-    const riskReason =
-      triggered.length > 0
-        ? triggered.map((s) => s.replace(/_/g, ' ')).join(', ')
-        : 'No anomalies detected';
-
-    return { riskScore: score, riskLevel, fraudSignals: signals, riskReason };
+    await job.updateProgress(100);
+    this.logger.log(
+      `Scored txn ${txnId} → ${riskResult.riskLevel} (${riskResult.riskScore}) | ${riskResult.riskReason}`,
+    );
   }
 
-  // ── Queue lifecycle hooks ──────────────────────────────────────────────────
+  // ── Worker lifecycle events ───────────────────────────────────────────────
 
   @OnWorkerEvent('active')
   onActive(job: Job) {
-    this.logger.debug(`Processing job ${job.id} (${job.name}) – txnId: ${job.data.txnId}`);
+    this.logger.debug(`Job active: ${job.id} (${job.name})`);
   }
 
   @OnWorkerEvent('completed')
-  onCompleted(job: Job, result: any) {
-    this.logger.log(`Job ${job.id} completed`);
+  onCompleted(job: Job) {
+    this.logger.log(`Job completed: ${job.id}`);
   }
 
   @OnWorkerEvent('failed')
-  onFailed(job: Job | undefined, err: Error) {
-    if (!job) {
-      this.logger.error(`A worker job failed before BullMQ could hydrate the job payload: ${err.message}`);
-      return;
-    }
+  onFailed(job: Job, err: Error) {
+    this.logger.error(
+      `Job failed: ${job.id} | attempt ${job.attemptsMade} | ${err.message}`,
+    );
+  }
 
-    this.logger.error(`Job ${job.id} failed after ${job.attemptsMade} attempts: ${err.message}`);
+  @OnWorkerEvent('stalled')
+  onStalled(jobId: string) {
+    this.logger.warn(`Job stalled: ${jobId} – will be retried`);
   }
 }

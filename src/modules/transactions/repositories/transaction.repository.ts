@@ -9,10 +9,6 @@ import {
 } from '../schemas/transaction.schema';
 import { CreateTransactionDto, QueryTransactionDto, UpdateRiskDto } from '../dto/transaction.dto';
 
-type CreateTransactionData = Omit<CreateTransactionDto, 'transactionTime'>
-  & Pick<Transaction, 'transactionTime'>
-  & Partial<Transaction>;
-
 // ─────────────────────────────────────────────────────────────────────────────
 // transaction.repository.ts
 //
@@ -38,13 +34,13 @@ export class TransactionRepository {
 
   // ── Write ─────────────────────────────────────────────────────────────────
 
-  async create(dto: CreateTransactionData): Promise<TransactionDocument> {
+  async create(dto: Partial<Transaction>): Promise<TransactionDocument> {
     const doc = new this.transactionModel(dto);
     return doc.save();
   }
 
   async createMany(docs: Partial<Transaction>[]): Promise<TransactionDocument[]> {
-    return this.transactionModel.insertMany(docs) as unknown as TransactionDocument[];
+    return this.transactionModel.insertMany(docs, { ordered: false }) as unknown as TransactionDocument[];
   }
 
   async updateRisk(txnId: string, risk: UpdateRiskDto): Promise<TransactionDocument | null> {

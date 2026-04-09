@@ -16,83 +16,75 @@ import {
 } from './config/app.config';
 
 import { TransactionModule } from './modules/transactions/transaction.module';
-import { SimulatorModule } from './modules/simulator/simulator.module';
-import { HealthModule } from './modules/health/health.module';
+import { SimulatorModule }   from './modules/simulator/simulator.module';
+import { HealthModule }      from './modules/health/health.module';
+import { MlModule }          from './modules/ml/ml.module';
+import { GatewayModule }     from './modules/gateway/gateway.module';
+import { UploadModule }      from './modules/upload/upload.module';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// app.module.ts
-//
-// Root module.  Responsibilities:
-//  • Load and validate environment variables via ConfigModule
-//  • Bootstrap MongoDB connection (async, uses ConfigService)
-//  • Bootstrap BullMQ queues with Redis connection (async)
-//  • Register global rate-limiter (ThrottlerModule)
-//  • Import all feature modules
-//
-// We use forRootAsync everywhere so the connection config is pulled from the
-// validated ConfigService rather than raw process.env strings.
+// app.module.ts  (Part 3 – final: UploadModule + GatewayModule registered)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Module({
   imports: [
-    // ── 1. Config ─────────────────────────────────────────────────────────
+    // ── Config ──────────────────────────────────────────────────────────────
     ConfigModule.forRoot({
-      isGlobal: true,           // available everywhere without re-importing
-      cache: true,              // cache parsed values for performance
+      isGlobal: true,
+      cache:    true,
       load: [
-        appConfig,
-        mongoConfig,
-        redisConfig,
-        mlConfig,
-        fraudConfig,
-        simulatorConfig,
-        throttleConfig,
+        appConfig, mongoConfig, redisConfig,
+        mlConfig,  fraudConfig, simulatorConfig, throttleConfig,
       ],
     }),
 
-    // ── 2. MongoDB ────────────────────────────────────────────────────────
+    // ── MongoDB ──────────────────────────────────────────────────────────────
     MongooseModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        uri: config.getOrThrow<string>('mongo.uri'),
-        dbName: config.getOrThrow<string>('mongo.dbName'),
-        // Connection pool settings for production
-        maxPoolSize: 10,
-        serverSelectionTimeoutMS: 5000,
-        socketTimeoutMS: 45000,
+      useFactory: (c: ConfigService) => ({
+        uri:                       c.getOrThrow<string>('mongo.uri'),
+        dbName:                    c.getOrThrow<string>('mongo.dbName'),
+        maxPoolSize:               10,
+        serverSelectionTimeoutMS:  5000,
+        socketTimeoutMS:           45000,
       }),
     }),
 
-    // ── 3. BullMQ (Redis-backed queues) ───────────────────────────────────
+    // ── BullMQ ────────────────────────────────────────────────────────────────
     BullModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
+      useFactory: (c: ConfigService) => ({
         connection: {
-          host: config.getOrThrow<string>('redis.host'),
-          port: config.getOrThrow<number>('redis.port'),
-          password: config.get<string>('redis.password') || undefined,
+          host:     c.getOrThrow<string>('redis.host'),
+          port:     c.getOrThrow<number>('redis.port'),
+          password: c.get<string>('redis.password') || undefined,
         },
         defaultJobOptions: {
-          removeOnComplete: true,
-          removeOnFail: false,
+          attempts:         3,
+          backoff:          { type: 'exponential', delay: 2000 },
+          removeOnComplete: { count: 100 },
+          removeOnFail:     { count: 500 },
         },
       }),
     }),
 
-    // ── 4. Rate limiter ───────────────────────────────────────────────────
+    // ── Rate limiter ──────────────────────────────────────────────────────────
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ([{
-        ttl: config.getOrThrow<number>('throttle.ttl') * 1000,
-        limit: config.getOrThrow<number>('throttle.limit'),
+      useFactory: (c: ConfigService) => ([{
+        ttl:   c.getOrThrow<number>('throttle.ttl') * 1000,
+        limit: c.getOrThrow<number>('throttle.limit'),
       }]),
     }),
 
-    // ── 5. Cron / schedule support ────────────────────────────────────────
+    // ── Cron scheduler ────────────────────────────────────────────────────────
     ScheduleModule.forRoot(),
 
-    // ── 6. Feature modules ────────────────────────────────────────────────
+    // ── Feature modules ───────────────────────────────────────────────────────
+    MlModule,
+    GatewayModule,
     TransactionModule,
+    UploadModule,
     SimulatorModule,
     HealthModule,
   ],

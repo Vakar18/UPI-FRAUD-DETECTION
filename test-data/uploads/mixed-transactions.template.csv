@@ -1,0 +1,3 @@
+txnId,senderId,receiverId,amount,currency,deviceId,city,state,ipAddress,deviceModel,transactionTime
+__CSV_TXN_ID__,csvuser@oksbi,merchant@hdfc,250000,INR,DV-CSV12345,Mumbai,Maharashtra,103.21.58.12,Pixel 8,2026-04-09T10:00:00.000Z
+BADROW__RUN_ID__,invalid-vpa,merchant@hdfc,-500,INR,DV-BAD12345,Delhi,Delhi,103.21.58.13,iPhone 15,2026-04-09T10:05:00.000Z
