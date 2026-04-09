@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .env
+.env.example
 *.js.map
 coverage/
 .DS_Store
