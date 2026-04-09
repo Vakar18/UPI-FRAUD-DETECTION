@@ -1,0 +1,67 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.yml
+#
+# Spins up the two external services the backend needs:
+#   • MongoDB 7  – primary database
+#   • Redis 7    – Bull queue + pub/sub for real-time alerts
+#
+# Usage:
+#   docker compose up -d        # start in background
+#   docker compose logs -f      # tail logs
+#   docker compose down -v      # stop and wipe volumes
+#
+# The NestJS app itself runs outside Docker in dev (npm run start:dev).
+# For a fully containerised setup see Dockerfile below.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: upi_fraud_mongo
+    restart: unless-stopped
+    ports:
+      - '27018:27017'
+    environment:
+      MONGO_INITDB_DATABASE: upi_fraud_detection
+    volumes:
+      - mongo_data:/data/db
+      - ./docker/mongo-init.js:/docker-entrypoint-initdb.d/init.js:ro
+    healthcheck:
+      test: ['CMD', 'mongosh', '--eval', "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: upi_fraud_redis
+    restart: unless-stopped
+    ports:
+      - '6378:6379'
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── Optional: Redis Commander GUI (remove in production) ──────────────────
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: upi_fraud_redis_ui
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: 'local:redis:6379'
+    ports:
+      - '8081:8081'
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  mongo_data:
+  redis_data:
