@@ -240,3 +240,4 @@ Indexes are designed around the exact query patterns of the dashboard:
 | **Part 4** | WebSocket server + Redis pub/sub → real-time alerts to the browser |
 | **Part 5** | Next.js dashboard (live charts, alert panel, transaction feed) |
 | **Part 6** | Docker Compose for the full stack + deployment to AWS EC2 |
+# UPI-FRAUD-FRONTEND
