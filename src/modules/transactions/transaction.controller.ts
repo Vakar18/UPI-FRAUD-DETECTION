@@ -82,6 +82,20 @@ export class TransactionController {
     return { success: true, data: stats };
   }
 
+  // ── GET /transactions/fraud-signals ───────────────────────────────────────
+  @Get('fraud-signals')
+  @ApiOperation({
+    summary: 'Fraud signals breakdown',
+    description:
+      'Returns the top fraud signals detected across all scored transactions ' +
+      'with their occurrence percentages.',
+  })
+  @ApiResponse({ status: 200, description: 'Fraud signals breakdown' })
+  async getFraudSignals() {
+    const signals = await this.service.getFraudSignals();
+    return { success: true, data: signals };
+  }
+
   // ── GET /transactions ─────────────────────────────────────────────────────
   @Get()
   @ApiOperation({

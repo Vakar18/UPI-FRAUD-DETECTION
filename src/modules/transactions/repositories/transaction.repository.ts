@@ -170,4 +170,57 @@ export class TransactionRepository {
       { $project: { senderId: '$_id', count: 1, _id: 0 } },
     ]);
   }
+
+  async getFraudSignalsBreakdown(): Promise<{ label: string; pct: number }[]> {
+    // Aggregate fraud signal statistics from all scored transactions
+    // This counts: for each signal key, how many transactions contain it (truthy value)
+    const signals = await this.transactionModel.aggregate([
+      { $match: { fraudSignals: { $exists: true, $ne: null } } },
+      // Unwind fraudSignals to get each signal as a separate document
+      { $project: { signals: { $objectToArray: '$fraudSignals' } } },
+      { $unwind: '$signals' },
+      // Filter out false/0 signals (only count triggered signals)
+      { $match: { $and: [{ 'signals.v': { $ne: false } }, { 'signals.v': { $ne: 0 } }] } },
+      // Group by signal name and count occurrences
+      {
+        $group: {
+          _id: '$signals.k',
+          count: { $sum: 1 },
+        },
+      },
+      // Sort by count descending
+      { $sort: { count: -1 } },
+      // Limit to top 10 signals
+      { $limit: 10 },
+    ]);
+
+    // Get total count to calculate percentages
+    const totalResult = await this.transactionModel.aggregate([
+      { $match: { fraudSignals: { $exists: true, $ne: null } } },
+      { $count: 'total' },
+    ]);
+    const total = totalResult[0]?.total || 1;
+
+    // Convert to label map and calculate percentages
+    const signalLabelMap: Record<string, string> = {
+      large_amount: 'Large amount',
+      very_large_amount: 'Very large amount',
+      odd_hour: 'Odd hour (1–4 AM)',
+      new_recipient: 'New recipient',
+      rapid_succession: 'Rapid succession',
+      very_rapid: 'Very rapid succession',
+      round_number: 'Round number',
+      unusual_amount: 'Unusual amount',
+      velocity_spike: 'Velocity spike',
+      botnet_ip: 'Botnet IP',
+      multiple_failures: 'Multiple failures',
+    };
+
+    return signals
+      .map((signal) => ({
+        label: signalLabelMap[signal._id] || signal._id,
+        pct: Math.round((signal.count / total) * 100),
+      }))
+      .sort((a, b) => b.pct - a.pct); // Sort by percentage descending
+  }
 }

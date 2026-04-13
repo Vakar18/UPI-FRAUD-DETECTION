@@ -143,4 +143,8 @@ export class TransactionService {
       generatedAt: new Date(),
     };
   }
+
+  async getFraudSignals(): Promise<{ label: string; pct: number }[]> {
+    return this.repo.getFraudSignalsBreakdown();
+  }
 }
