@@ -127,17 +127,33 @@ def generate_training_data(n_samples: int = 5000) -> pd.DataFrame:
     return df[FEATURES]
 
 
-def train_model() -> tuple:
-    """Train Isolation Forest + StandardScaler. Returns (model, scaler)."""
+def train_model(training_data_df=None) -> tuple:
+    """
+    Train Isolation Forest + StandardScaler. Returns (model, scaler).
+    
+    Args:
+        training_data_df: Optional DataFrame with [FEATURES] columns and optional 'is_fraud' label.
+                         If None, generates synthetic training data.
+    """
     logger.info("Training Isolation Forest model …")
-    df     = generate_training_data(5000)
+    
+    # Use provided data or generate synthetic
+    if training_data_df is not None:
+        df = training_data_df[FEATURES] if set(FEATURES).issubset(training_data_df.columns) else training_data_df
+    else:
+        df = generate_training_data(5000)
+    
+    logger.info(f"Training with {len(df)} samples")
+    
     scaler = StandardScaler()
     X      = scaler.fit_transform(df)
 
     model  = IsolationForest(
         n_estimators=200,
-        contamination=0.05,  # expected ~5 % anomaly rate
+        contamination=0.05,      # expected ~5% anomaly rate
         max_samples="auto",
+        max_features=0.9,        # use 90% of features per tree (prevents overfitting)
+        bootstrap=False,
         random_state=42,
         n_jobs=-1,
     )
@@ -335,17 +351,62 @@ def health():
 @app.post("/retrain")
 def retrain():
     """
-    Retrain the model with new synthetic data (or pass real labelled samples
-    in the request body as { "samples": [...] } for a real feedback loop).
-    Called after sufficient analyst reviews accumulate.
+    Retrain the model.
+    
+    Request body (optional): 
+      {
+        "samples": [
+          {
+            "amount": 250000,
+            "hour_of_day": 14,
+            "recent_txn_count": 1,
+            "is_new_recipient": false,
+            "day_of_week": 2,
+            "amount_log": 12.43,
+            "is_odd_hour": 0,
+            "is_weekend": 0
+          }
+        ],
+        "use_synthetic": true  # If true or no samples, blend with synthetic data
+      }
+    
+    If request body is empty or use_synthetic=true, uses new synthetic data.
+    If samples provided, retrains on those samples (optionally blended with synthetic).
     """
     global model, scaler
     try:
-        model, scaler = train_model()
+        data = request.get_json(force=True) if request.is_json else {}
+        samples = data.get("samples", [])
+        use_synthetic = data.get("use_synthetic", not samples)  # Use synthetic if no samples or explicitly set
+        
+        training_df = None
+        
+        if samples:
+            logger.info(f"Received {len(samples)} real samples for retraining")
+            df_real = pd.DataFrame(samples)
+            
+            # Optionally blend with synthetic data for stability
+            if use_synthetic:
+                logger.info("Blending with synthetic data for stability")
+                df_synthetic = generate_training_data(3000)
+                training_df = pd.concat([df_real, df_synthetic], ignore_index=True)
+            else:
+                training_df = df_real
+        else:
+            logger.info("No samples provided – using synthetic data only")
+        
+        # Retrain with provided or synthetic data
+        model, scaler = train_model(training_df)
         joblib.dump(model,  MODEL_PATH)
         joblib.dump(scaler, SCALER_PATH)
-        logger.info("Model retrained and persisted")
-        return jsonify({"status": "retrained", "model_version": MODEL_VERSION})
+        
+        logger.info(f"Model retrained with {len(training_df) if training_df is not None else 5000} samples")
+        return jsonify({
+            "status": "retrained",
+            "model_version": MODEL_VERSION,
+            "samples_used": len(training_df) if training_df is not None else 5000,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        })
     except Exception as e:
         logger.error(f"Retrain error: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
