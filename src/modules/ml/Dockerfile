@@ -9,8 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 
-# Model files are persisted to a volume so retraining survives restarts
-VOLUME ["/app/models"]
+# Model files paths (volumes configured in Railway dashboard)
 ENV MODEL_PATH=/app/models/model.joblib
 ENV SCALER_PATH=/app/models/scaler.joblib
 
