@@ -18,6 +18,7 @@ export const appConfig = registerAs('app', () => ({
   port: parseNumber(process.env.PORT, 3000),
   apiPrefix: process.env.API_PREFIX || 'api/v1',
   swaggerEnabled: process.env.SWAGGER_ENABLED !== 'false',
+  corsOrigin: process.env.ALLOWED_ORIGINS || process.env.CORS_ORIGIN || 'http://localhost:3000',
 }));
 
 export const mongoConfig = registerAs('mongo', () => ({
