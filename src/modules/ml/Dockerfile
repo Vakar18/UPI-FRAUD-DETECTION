@@ -4,10 +4,14 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install deps first (layer cache friendly)
-COPY requirements.txt .
+COPY src/modules/ml/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+COPY src/modules/ml/app.py .
+
+# Copy model files if they exist
+COPY src/modules/ml/model.joblib ./models/ 2>/dev/null || true
+COPY src/modules/ml/scaler.joblib ./models/ 2>/dev/null || true
 
 # Model files paths (volumes configured in Railway dashboard)
 ENV MODEL_PATH=/app/models/model.joblib
