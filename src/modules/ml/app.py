@@ -262,6 +262,28 @@ def build_risk_reason(signals: dict, if_score: float) -> str:
 # Routes
 # ═══════════════════════════════════════════════════════════════════════════════
 
+@app.get("/")
+def index():
+    """Service info – root route for browser access."""
+    return jsonify({
+        "service": "UPI Fraud Detection ML Microservice",
+        "version": MODEL_VERSION,
+        "status": "running",
+        "endpoints": {
+            "GET /": "This endpoint",
+            "GET /health": "Health check",
+            "POST /predict": "Score a transaction",
+            "POST /retrain": "Retrain the model",
+        },
+        "docs": {
+            "predict": "/predict (POST) - requires: txn_id, amount, hour_of_day",
+            "health": "/health (GET) - checks if model is loaded",
+            "retrain": "/retrain (POST) - retrains with new data",
+        },
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    })
+
+
 @app.post("/predict")
 def predict():
     """
@@ -413,6 +435,37 @@ def retrain():
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
+@app.before_request
+def before_request():
+    """Logging middleware."""
+    logger.info(f"{request.method} {request.path}")
+
+
+@app.errorhandler(404)
+def not_found(error):
+    """Handle 404 errors gracefully."""
+    return jsonify({
+        "error": "Not found",
+        "path": request.path,
+        "available_endpoints": [
+            "GET /",
+            "GET /health",
+            "POST /predict",
+            "POST /retrain",
+        ]
+    }), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle 500 errors gracefully."""
+    logger.error(f"Internal server error: {error}", exc_info=True)
+    return jsonify({
+        "error": "Internal server error",
+        "message": str(error)
+    }), 500
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
